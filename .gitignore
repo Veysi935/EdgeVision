@@ -5,3 +5,6 @@ models/*.onnx
 models/*.engine
 benchmarks/*.mp4
 __pycache__/
+ros2_node/build/
+ros2_node/install/
+ros2_node/log/
