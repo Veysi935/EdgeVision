@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cstdint>
 #include <opencv2/opencv.hpp>
 #include <NvInfer.h>
 #include <cuda_runtime_api.h>
@@ -36,17 +37,25 @@ public:
     std::vector<Detection> detect(const cv::Mat& frame, StageTimings& timings);
 
 private:
-    cv::Mat letterbox(const cv::Mat& src, float& scale, int& pad_x, int& pad_y);
-
     TrtLogger logger_;
     std::unique_ptr<nvinfer1::IRuntime> runtime_;
     std::unique_ptr<nvinfer1::ICudaEngine> engine_;
     std::unique_ptr<nvinfer1::IExecutionContext> context_;
     cudaStream_t stream_ = nullptr;
 
+    // CUDA Events (GPU surelerini pipeline'i durdurmadan olcmek icin)
+    cudaEvent_t ev_start_ = nullptr;
+    cudaEvent_t ev_pre_end_ = nullptr;
+    cudaEvent_t ev_inf_end_ = nullptr;
+
+    // Pinned Host & Device bellekleri
+    uint8_t* h_input_pinned_ = nullptr;
+    uint8_t* d_raw_img_ = nullptr;
+    size_t raw_img_capacity_ = 0;
+
     void* d_input_ = nullptr;
     void* d_output_ = nullptr;
-    std::vector<float> h_output_;
+    float* h_output_pinned_ = nullptr;
 
     const int input_w_ = 640;
     const int input_h_ = 640;

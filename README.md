@@ -1,35 +1,37 @@
-# EdgeVision: C++17 & TensorRT Real-Time Object Detection & Tracking
+# EdgeVision: C++17, CUDA & TensorRT Real-Time Object Detection & Tracking
 
-**EdgeVision**, Python/PyTorch ortamında çalışan YOLOv8 + ByteTrack nesne tespit ve takip hattının, üretim (production) ortamına uygun, sıfır Python bağımlılıklı **C++17, CUDA ve NVIDIA TensorRT** mimarisine taşınması ve bilimsel olarak profillenmesi projesidir.
+**EdgeVision** is a high-performance, zero-Python-dependency C++17 inference and multi-object tracking pipeline built with **NVIDIA TensorRT 10** and **CUDA**. It migrates a standard Python/PyTorch YOLOv8 + ByteTrack workflow to production-grade C++, profiles each pipeline stage to uncover hardware bottlenecks, and eliminates CPU overhead using custom CUDA kernels and pinned host memory.
 
-## Teknoloji Yığını
-* **Dil & Derleme:** C++17 (`-O3` Release), CMake
-* **Inference & GPU:** NVIDIA TensorRT 10.9 (FP16), CUDA 12.8 (`enqueueV3`, CUDA Streams)
-* **Görüntü İşleme & Takip:** OpenCV 4.6, Saf C++ ByteTrack (OpenCV `KalmanFilter` + İki Aşamalı IoU Eşleştirme)
-* **Model:** YOLOv8n (`.pt` -> `.onnx` -> `.engine`)
+## Tech Stack
+- **Language & Build:** C++17 (`-O3` Release), CUDA C++, CMake
+- **Inference & GPU:** NVIDIA TensorRT 10.9 (FP16), CUDA 12.8 (`enqueueV3`, CUDA Streams, CUDA Events)
+- **GPU Optimization (V2):** Custom CUDA Bilinear Letterbox Kernel (BGR→RGB, Normalize, HWC→CHW), Pinned Host Memory (`cudaMallocHost`)
+- **Vision & Tracking:** OpenCV 4.6, Pure C++ ByteTrack (OpenCV `KalmanFilter` + Two-Stage IoU Matching)
+- **Model:** YOLOv8n (`.pt` -> `.onnx` -> `.engine`)
 
-## Donanım & Test Ortamı
-* **GPU:** NVIDIA GeForce RTX 4060 Laptop GPU (8 GB VRAM)
-* **CPU / RAM:** AMD Ryzen 7 / 32 GB RAM
-* **OS:** Ubuntu 24.04 (WSL2)
+## Hardware & Environment
+- **GPU:** NVIDIA GeForce RTX 4060 Laptop GPU (8 GB VRAM)
+- **CPU / RAM:** AMD Ryzen 7 / 32 GB RAM
+- **OS:** Ubuntu 24.04 (WSL2)
 
-## Benchmark Sonuçları (581 Kare, 15 Kare Warmup)
+## Benchmark Results (581 Frames, 15 Warmup Frames)
 
-| Konfigürasyon | Ortalama Süre | P50 Latency | P95 Latency | Ortalama FPS |
+| Configuration | Mean Latency | P50 Latency | P95 Latency | Mean FPS |
 | :--- | :---: | :---: | :---: | :---: |
-| Python + PyTorch + ByteTrack | 12.16 ms | 11.98 ms | 14.98 ms | 82.22 FPS |
-| **C++17 (-O3) + TensorRT FP16 + C++ ByteTrack** | **6.62 ms** | **6.46 ms** | **7.75 ms** | **151.12 FPS** |
+| Python + PyTorch + ByteTrack (Baseline) | 12.16 ms | 11.98 ms | 14.98 ms | 82.22 FPS |
+| C++17 V1 (CPU Preprocess) + TensorRT FP16 | 6.62 ms | 6.46 ms | 7.75 ms | 151.12 FPS |
 | Python + TensorRT FP16 + ByteTrack | 5.14 ms | 5.21 ms | 6.96 ms | 194.41 FPS |
+| **C++17 V2 (CUDA Kernel + Pinned Mem) + TRT FP16** | **3.55 ms** | **3.34 ms** | **4.86 ms** | **281.45 FPS** |
 
-### C++17 Aşama Bazlı Darboğaz Analizi
-* **Preprocess (CPU Letterbox + Blob):** `2.26 ms`
-* **Inference (GPU TensorRT FP16 + Memcpy):** `3.63 ms`
-* **Postprocess (Decode + NMS):** `0.71 ms`
-* **ByteTrack (C++ Kalman + IoU):** `0.02 ms`
+### C++17 Stage-by-Stage Profiling (V1 vs. V2)
+- **Preprocess:** `2.26 ms` (CPU OpenCV) → **`0.30 ms`** (Custom CUDA Kernel + Pinned Mem) — *7.5x faster*
+- **Inference + Memcpy:** `3.63 ms` → **`2.45 ms`** (TensorRT FP16 + Async `uint8` Transfer)
+- **Postprocess (Decode + NMS):** `0.71 ms` → **`0.78 ms`**
+- **ByteTrack (Pure C++ Kalman + IoU):** `0.02 ms` → **`0.03 ms`**
 
-> **Mühendislik Çıkarımı:** Sadece C++'a geçmek otomatik olarak en hızlı sonucu vermez. C++ hattında `Postprocess` (0.71 ms) ve `ByteTrack` (0.02 ms) neredeyse sıfır maliyetle çalışırken, CPU tabanlı ön işleme (`2.26 ms`) ana darboğaz olarak tespit edilmiştir. V2 sürümünde CUDA Kernel tabanlı GPU Preprocess ve Pinned Memory ile 200+ FPS hedeflenmektedir.
+> **Engineering Takeaway:** Simply rewriting a pipeline in C++ (V1: `151.12 FPS`) does not automatically outperform a GPU-backed Python wrapper (`194.41 FPS`) if preprocessing remains on the CPU (`2.26 ms`). Moving letterbox resizing, color conversion, and normalization into a single custom CUDA kernel with pinned host memory (V2) eliminated the bottleneck, reaching **`281.45 FPS`** (`3.42x` over PyTorch baseline and `1.45x` over Python + TensorRT) with zero Python dependencies.
 
-## Derleme ve Çalıştırma
+## Build & Run
 ```bash
 mkdir -p build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
